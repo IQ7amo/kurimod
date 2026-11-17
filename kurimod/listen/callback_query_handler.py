@@ -1,3 +1,4 @@
+import asyncio
 from typing import Callable, Tuple
 
 import pyrogram
@@ -63,7 +64,7 @@ class CallbackQueryHandler(
                 if is_async_callable(filters):
                     listener_does_match = await filters(client, query)
                 else:
-                    listener_does_match = await client.loop.run_in_executor(
+                    listener_does_match = await asyncio.get_running_loop().run_in_executor(
                         None, filters, client, query
                     )
             else:
@@ -81,7 +82,7 @@ class CallbackQueryHandler(
             if is_async_callable(self.filters):
                 handler_does_match = await self.filters(client, query)
             else:
-                handler_does_match = await client.loop.run_in_executor(
+                handler_does_match = await asyncio.get_running_loop().run_in_executor(
                     None, self.filters, client, query
                 )
         else:

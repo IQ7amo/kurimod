@@ -31,7 +31,20 @@ def is_async_callback(callback):
 @patch_into(pyrogram.dispatcher.Dispatcher)
 class Dispatcher(pyrogram.dispatcher.Dispatcher):
     @should_patch()
-    async def handler_worker(self, lock):
+    def _rebuild_loop_bound_state(self):
+        old_rebuild = getattr(self, "old_rebuild_loop_bound_state", None)
+        if old_rebuild is not None:
+            old_rebuild()
+
+        from .client import ListenerAwareQueue
+
+        if not isinstance(self.updates_queue, ListenerAwareQueue):
+            self.updates_queue = ListenerAwareQueue(
+                self.client, self.updates_queue
+            )
+
+    @should_patch()
+    async def handler_worker(self, lock=None):
         while True:
             packet = await self.updates_queue.get()
 
@@ -39,7 +52,7 @@ class Dispatcher(pyrogram.dispatcher.Dispatcher):
                 break
 
             # Keep queue workers free while a handler waits on listen()/ask().
-            task = self.client.loop.create_task(
+            task = asyncio.get_running_loop().create_task(
                 self.dispatch_update_packet(packet, lock)
             )
             tasks = getattr(self.client, "kurimod_handler_tasks", None)
@@ -71,7 +84,7 @@ class Dispatcher(pyrogram.dispatcher.Dispatcher):
             tasks.discard(task)
 
     @should_patch()
-    async def dispatch_update_packet(self, packet, lock):
+    async def dispatch_update_packet(self, packet, lock=None):
         try:
             update, users, chats = packet
             parser = self.update_parsers.get(type(update), None)
@@ -82,10 +95,12 @@ class Dispatcher(pyrogram.dispatcher.Dispatcher):
                 else (None, type(None))
             )
 
-            # Snapshot handlers under the dispatcher lock, then run callbacks outside
-            # it so long conversations do not block later updates.
-            async with lock:
+            # Snapshot handlers before callbacks so long conversations do not block updates.
+            if lock is None:
                 groups = [list(group) for group in self.groups.values()]
+            else:
+                async with lock:
+                    groups = [list(group) for group in self.groups.values()]
 
             for group in groups:
                 for handler in group:
@@ -117,7 +132,7 @@ class Dispatcher(pyrogram.dispatcher.Dispatcher):
                         if is_async_callback(handler.callback):
                             await handler.callback(self.client, *args)
                         else:
-                            await self.client.loop.run_in_executor(
+                            await asyncio.get_running_loop().run_in_executor(
                                 self.client.executor,
                                 handler.callback,
                                 self.client,

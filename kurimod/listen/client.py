@@ -69,7 +69,7 @@ class ListenerAwareQueue:
 
     def ensure_pump(self):
         if self.pump_task is None or self.pump_task.done():
-            self.pump_task = self.client.loop.create_task(self.pump())
+            self.pump_task = asyncio.get_running_loop().create_task(self.pump())
 
     async def pump(self):
         try:
@@ -133,7 +133,7 @@ class Client(pyrogram.client.Client):
             inline_message_id=inline_message_id,
         )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
 
         listener = Listener(
@@ -155,7 +155,7 @@ class Client(pyrogram.client.Client):
                 if iscoroutinefunction(config.timeout_handler.__call__):
                     await config.timeout_handler(pattern, listener, timeout)
                 else:
-                    await self.loop.run_in_executor(
+                    await asyncio.get_running_loop().run_in_executor(
                         None, config.timeout_handler, pattern, listener, timeout
                     )
             elif config.throw_exceptions:
@@ -210,7 +210,7 @@ class Client(pyrogram.client.Client):
                 if is_async_callable(callback):
                     await callback(self, *args)
                 else:
-                    await self.loop.run_in_executor(
+                    await asyncio.get_running_loop().run_in_executor(
                         self.executor, callback, self, *args
                     )
             except (pyrogram.StopPropagation, pyrogram.ContinuePropagation):
@@ -218,7 +218,7 @@ class Client(pyrogram.client.Client):
             except Exception:
                 log.exception("Unhandled exception in kurimod handler callback")
 
-        task = self.loop.create_task(runner())
+        task = asyncio.get_running_loop().create_task(runner())
         self.kurimod_handler_tasks.add(task)
         task.add_done_callback(self.kurimod_handler_tasks.discard)
         return task
@@ -274,7 +274,9 @@ class Client(pyrogram.client.Client):
             if is_async_callable(filters):
                 return await filters(self, update)
 
-            return await self.loop.run_in_executor(None, filters, self, update)
+            return await asyncio.get_running_loop().run_in_executor(
+                None, filters, self, update
+            )
 
         return True
 
@@ -426,7 +428,7 @@ class Client(pyrogram.client.Client):
             if iscoroutinefunction(config.stopped_handler.__call__):
                 await config.stopped_handler(None, listener)
             else:
-                await self.loop.run_in_executor(
+                await asyncio.get_running_loop().run_in_executor(
                     None, config.stopped_handler, None, listener
                 )
         elif config.throw_exceptions:
